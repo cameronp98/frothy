@@ -5,6 +5,27 @@ use std::str;
 
 use crate::error::Result;
 
+/// Errors produced whilst reading tokens
+#[derive(Debug, Clone)]
+pub enum TokenError {
+    Unexpected(u8),
+}
+
+impl fmt::Display for TokenError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            TokenError::Unexpected(byte) => {
+                write!(f, "unexpected 0x{:02x}", byte)?;
+                if byte.is_ascii() {
+                    write!(f, "('{}')", char::from(*byte))?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+
 /// A frothy token
 #[derive(Debug, Clone)]
 pub enum Token {
@@ -40,6 +61,7 @@ impl fmt::Display for Token {
         }
     }
 }
+
 
 /// Parse a frothy program into [`Token`](enum.Token.html)s
 #[derive(Debug, Clone)]
@@ -123,32 +145,14 @@ impl<'a> Tokens<'a> {
     }
 }
 
-/// Errors produced whilst reading tokens
-#[derive(Debug, Clone)]
-pub enum TokenError {
-    Unexpected(u8),
-}
-
-impl fmt::Display for TokenError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            TokenError::Unexpected(byte) => {
-                write!(f, "unexpected 0x{:02x}", byte)?;
-                if byte.is_ascii() {
-                    write!(f, "('{}')", char::from(*byte))?;
-                }
-                Ok(())
-            }
-        }
-    }
-}
-
 impl<'a> Iterator for Tokens<'a> {
     type Item = Result<Token>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        // skip whitespace
         self.next_byte_while(u8::is_ascii_whitespace);
 
+        // match the next byte if there is one
         self.next_byte().and_then(|b| match b {
             // skip comments
             b'#' => {

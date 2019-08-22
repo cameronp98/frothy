@@ -1,4 +1,4 @@
-//! Evaluate an [`Ast`][Ast] to produce values and console output
+//! Evaluate an [`Ast`](../ast/enum.Ast.html) to produce values and console output
 //!
 //! TODO: add support for constants (e.g. PI 3.14 const =)
 //! TODO: create Const(Ast) `Ast` variant
@@ -13,6 +13,7 @@ use crate::ast::{Ast, Parser};
 use crate::ast::Literal;
 use crate::error::Result;
 
+/// A frothy evaluation context (variables)
 #[derive(Debug)]
 pub struct Context {
     vars: HashMap<String, Value>,
@@ -120,6 +121,7 @@ impl Interpreter {
     }
 }
 
+/// Errors encountered while interpreting an [`Ast`](../ast/enum.Ast.html)
 #[derive(Debug, Clone)]
 pub enum InterpreterError {
     VariableUndefined(String),
@@ -172,6 +174,9 @@ impl Value {
     }
 }
 
+
+// formatting impls
+
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -195,6 +200,9 @@ impl fmt::Debug for Value {
         }
     }
 }
+
+
+// conversion from literal to `Value`
 
 impl From<Literal> for Value {
     fn from(lit: Literal) -> Self {
@@ -227,6 +235,9 @@ impl<T: Into<Value>> From<Option<T>> for Value {
         }
     }
 }
+
+
+// operation impls
 
 impl ops::Add for Value {
     type Output = Value;
