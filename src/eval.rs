@@ -29,7 +29,8 @@ impl Context {
     pub fn lookup<T: Into<String>>(&self, ident: T) -> Result<Value> {
         let ident = ident.into();
         // TODO figure out how variable values should be referenced. At the moment we just clone
-        self.vars.get(&ident)
+        self.vars
+            .get(&ident)
             .cloned()
             .ok_or_else(|| InterpreterError::VariableUndefined(ident).into())
     }
@@ -67,9 +68,7 @@ impl Interpreter {
         // pi constant
         ctx.set("PI", Value::Number(::std::f64::consts::PI));
 
-        Interpreter {
-            ctx,
-        }
+        Interpreter { ctx }
     }
 
     fn eval(&mut self, ast: &Ast) -> Result<Value> {
@@ -92,7 +91,7 @@ impl Interpreter {
             Ast::Call(ast) => {
                 let value = self.eval(ast)?;
                 self.call(&value)
-            },
+            }
             Ast::Ident(ident) => self.ctx.lookup(ident),
         }
     }
@@ -177,7 +176,6 @@ impl Value {
     }
 }
 
-
 // formatting impls
 
 impl fmt::Display for Value {
@@ -203,7 +201,6 @@ impl fmt::Debug for Value {
         }
     }
 }
-
 
 // conversion from literal to `Value`
 
@@ -238,7 +235,6 @@ impl<T: Into<Value>> From<Option<T>> for Value {
         }
     }
 }
-
 
 // operation impls
 

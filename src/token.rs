@@ -25,7 +25,6 @@ impl fmt::Display for TokenError {
     }
 }
 
-
 /// A frothy token
 #[derive(Debug, Clone)]
 pub enum Token {
@@ -61,7 +60,6 @@ impl fmt::Display for Token {
         }
     }
 }
-
 
 /// Parse a frothy program into [`Token`](enum.Token.html)s
 #[derive(Debug, Clone)]
@@ -137,17 +135,17 @@ impl<'a> Tokens<'a> {
             1.0
         };
 
-        let result: f64 = str::from_utf8(self.next_byte_while(u8::is_ascii_digit))?
-            .parse()?;
+        let result: f64 = str::from_utf8(self.next_byte_while(u8::is_ascii_digit))?.parse()?;
 
         Ok(result * sign)
     }
 
     // read and parse an ident, assuming the current byte is a valid ident character
     fn next_ident(&mut self) -> Result<String> {
-        Ok(str::from_utf8(self.next_byte_while(|b| {
-            b.is_ascii_alphanumeric() || *b == b'_'
-        }))?.to_string())
+        Ok(
+            str::from_utf8(self.next_byte_while(|b| b.is_ascii_alphanumeric() || *b == b'_'))?
+                .to_string(),
+        )
     }
 }
 
