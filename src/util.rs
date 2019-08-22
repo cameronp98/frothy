@@ -1,44 +1,17 @@
-pub struct Cursor<'a, T> {
-    items: &'a [T],
-    pos: usize,
-}
+//! Utility functions for working with stacks and other postfix operations
 
-impl<'a, T> Cursor<'a, T> {
-    fn new(items: &'a [T]) -> Cursor<'a, T> {
-        Cursor {
-            items,
-            pos: 0,
-        }
-    }
-
-    fn peek(&self) -> Option<&T> {
-        if self.pos < self.items.len() {
-            Some(&self.items[self.pos])
-        } else {
-            None
-        }
-    }
-
-    fn back(&mut self) -> Option<&T> {
-        if self.pos > 0 {
-            self.pos -= 1;
-            Some(&self.items[self.pos])
-        } else {
-            None
-        }
-    }
-}
+use crate::error::{Error, Result};
 
 // pop `n` args from the stack, then call `f` with those args and push the result
 //
 // instead of popping each arg then reversing the order, this function just gets a slice
 // reference to the top of the stack, calls the function, then removes the args after
-pub fn pop_n<T, F: Fn(&[T]) -> T>(s: &mut Vec<T>, n: usize, f: F) -> Result<(), String> {
+pub fn call<T, F: Fn(&[T]) -> T>(s: &mut Vec<T>, n: usize, f: F) -> Result<()> {
     let len = s.len();
 
     // make sure there are enough arguments on the stack
     if len < n {
-        return Err(format!("Expected at least {} arguments, stack size = {}", n, len));
+        return Err(Error::NotEnoughArguments(n, len));
     }
 
     // create the range index for the `n` args on the top of the stack

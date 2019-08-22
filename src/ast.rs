@@ -1,10 +1,36 @@
-//! ast.rs
+// frothy/src/ast.rs
 
-use crate::value::Value;
-use crate::token::{Tokens, Token};
-use crate::util::pop_n;
-use core::fmt;
+//! Functions and types for parsing frothy programs into [`Ast`](enum.Ast.html)s
 
+use std::fmt;
+
+use crate::error::{Error, Result};
+use crate::token::{Token, Tokens};
+use crate::util::call;
+
+/// Errors in AST building or evaluation
+#[derive(Debug, Clone)]
+pub enum AstError {
+    Expected(String),
+    ExpectedButGot(String, Token),
+    Unexpected(Token),
+    UnexpectedEoi,
+}
+
+impl fmt::Display for AstError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            AstError::Expected(pattern) => write!(f, "expected {}", pattern),
+            AstError::ExpectedButGot(pattern, token) => {
+                write!(f, "expected {} but got '{}'", pattern, token)
+            }
+            AstError::Unexpected(token) => write!(f, "unexpected token '{}'", token),
+            AstError::UnexpectedEoi => f.write_str("unexpected EOI"),
+        }
+    }
+}
+
+/// A frothy literal
 #[derive(Debug, Clone)]
 pub enum Literal {
     Boolean(bool),
@@ -13,15 +39,16 @@ pub enum Literal {
 }
 
 impl fmt::Display for Literal {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Literal::Boolean(boolean) => write!(f, "{}", boolean),
             Literal::Number(num) => write!(f, "{}", num),
-            Nil => f.write_str("Nil"),
+            Literal::Nil => f.write_str("Nil"),
         }
     }
 }
 
+/// Frothy AST node types
 #[derive(Debug, Clone)]
 pub enum Ast {
     Literal(Literal),
@@ -42,7 +69,7 @@ pub enum Ast {
 }
 
 impl fmt::Display for Ast {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Ast::Literal(lit) => fmt::Display::fmt(lit, f),
             Ast::Add(a, b) => write!(f, "({} {} +)", a, b),
@@ -50,14 +77,14 @@ impl fmt::Display for Ast {
             Ast::Multiply(a, b) => write!(f, "({} {} *)", a, b),
             Ast::Divide(a, b) => write!(f, "({} {} /)", a, b),
             Ast::Block(block) => {
-                f.write_str("{");
+                f.write_str("{")?;
                 for ast in block {
                     write!(f, "{}", ast)?;
                 }
                 f.write_str("}")
             }
             Ast::Func(block) => {
-                f.write_str("({");
+                f.write_str("({")?;
                 for ast in block {
                     write!(f, "{}", ast)?;
                 }
@@ -69,6 +96,7 @@ impl fmt::Display for Ast {
     }
 }
 
+/// Parse a frothy program into [`ast::Ast`]
 pub struct Parser<'a> {
     tokens: Tokens<'a>,
     stack: Vec<Ast>,
@@ -82,21 +110,24 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse(mut self) -> Result<Vec<Ast>, String> {
+    /// parse until EOI/error and return `Ast` stack
+    pub fn parse(mut self) -> Result<Vec<Ast>> {
         loop {
-            self.parse_next()?;
+            match self.parse_next() {
+                Ok(_) => {}
+                Err(Error::AstError(AstError::UnexpectedEoi)) => return Ok(self.stack),
+                Err(e) => return Err(e),
+            }
         }
-
-        Ok(self.stack)
     }
 
-    fn parse_next(&mut self) -> Result<(), String> {
+    fn parse_next(&mut self) -> Result<()> {
         macro_rules! binary_op {
-            ($ast:ident) => {
-                {
-                    let _ = pop_n(&mut self.stack, 2, |a| Ast::$ast(Box::new(a[0].clone()), Box::new(a[1].clone())))?;
-                }
-            }
+            ($ast:ident) => {{
+                let _ = call(&mut self.stack, 2, |a| {
+                    Ast::$ast(Box::new(a[0].clone()), Box::new(a[1].clone()))
+                })?;
+            }};
         }
 
         if let Some(token) = self.tokens.next() {
@@ -122,28 +153,27 @@ impl<'a> Parser<'a> {
                 }
                 Token::Number(num) => self.stack.push(Ast::Literal(Literal::Number(num))),
                 Token::Assign => {
-                    if let (Some(ast), Some(Ast::Ident(ident))) = (self.stack.pop(), self.stack.pop()) {
+                    // expect an assign: ident + ast
+                    if let (Some(ast), Some(Ast::Ident(ident))) =
+                    (self.stack.pop(), self.stack.pop())
+                    {
                         self.stack.push(Ast::Assign(ident, Box::new(ast)));
                     } else {
-                        return Err(format!("Expected ident and ast"));
+                        return Err(AstError::Expected(String::from("ident + ast")).into());
                     }
                 }
                 // unexpected token
-                token => return Err(format!("Unexpected token {:?}", token))
+                token => return Err(AstError::Unexpected(token).into()),
             }
         } else {
-            return Err(String::from("eof"));
-        }
-
-        for ast in self.stack.iter() {
-            println!("{}", ast);
+            return Err(AstError::UnexpectedEoi.into());
         }
 
         Ok(())
     }
 
-    fn parse_block(&mut self) -> Result<(), String> {
-        let start= self.stack.len();
+    fn parse_block(&mut self) -> Result<()> {
+        let start = self.stack.len();
 
         loop {
             if let Ok(Token::CloseBrace) = self.tokens.clone().peekable().peek().unwrap() {
@@ -160,17 +190,17 @@ impl<'a> Parser<'a> {
                 return Ok(());
             }
 
-            self.parse_next()?;
+            if let Err(Error::AstError(AstError::UnexpectedEoi)) = self.parse_next() {
+                return Err(AstError::Expected(String::from("}")).into());
+            }
         }
-
-        Err(format!("Expected }}"))
     }
 
-    fn parse_fn(&mut self) -> Result<(), String> {
+    fn parse_fn(&mut self) -> Result<()> {
         if let Some(Ast::Block(block)) = self.stack.pop() {
             self.stack.push(Ast::Func(block));
         } else {
-            return Err(String::from("expected block"));
+            return Err(AstError::Expected(String::from("block")).into());
         }
         Ok(())
     }

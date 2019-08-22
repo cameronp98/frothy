@@ -5,4 +5,3 @@ foo {
 } fn =
 
 b foo =
-

@@ -1,5 +1,8 @@
+//! Types and methods for parsing a frothy program into [`Token`](enum.Token.html)s
+
 use std::fmt;
 
+/// A frothy token
 #[derive(Debug, Clone)]
 pub enum Token {
     Ident(String),
@@ -35,6 +38,7 @@ impl fmt::Display for Token {
     }
 }
 
+/// Parse a frothy program into [`Token`](enum.Token.html)s
 #[derive(Debug, Clone)]
 pub struct Tokens<'a> {
     input: &'a [u8],
@@ -42,9 +46,10 @@ pub struct Tokens<'a> {
 }
 
 impl<'a> Tokens<'a> {
-    pub fn new(input: &'a [u8]) -> Tokens<'a> {
+    /// Create an `Iterator<Item = Token>` for the given input program
+    pub fn new(input: &'a str) -> Tokens<'a> {
         Tokens {
-            input: input.as_ref(),
+            input: input.as_bytes(),
             pos: 0,
         }
     }
@@ -79,13 +84,14 @@ impl<'a> Tokens<'a> {
     }
 
     fn next_byte_if<F: Fn(&u8) -> bool>(&mut self, f: F) -> Option<u8> {
-        self.peek().and_then(|b| if f(&b) {
+        self.peek().and_then(|b| {
+            if f(&b) {
                 self.next_byte();
                 Some(b)
             } else {
                 None
             }
-        )
+        })
     }
 
     fn next_byte_while<F: Fn(&u8) -> bool>(&mut self, f: F) -> &[u8] {
@@ -116,10 +122,26 @@ impl<'a> Tokens<'a> {
     }
 }
 
+/// Errors produced whilst reading tokens
 #[derive(Debug, Clone)]
 pub enum TokenError {
     Unexpected(u8),
-    InvalidUtf8
+    InvalidUtf8,
+}
+
+impl fmt::Display for TokenError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            TokenError::Unexpected(byte) => {
+                if byte.is_ascii() {
+                    write!(f, "expected '{}'", char::from(*byte))
+                } else {
+                    write!(f, "expected 0x{:02x}", byte)
+                }
+            }
+            TokenError::InvalidUtf8 => f.write_str("invalid utf-8"),
+        }
+    }
 }
 
 impl<'a> Iterator for Tokens<'a> {
@@ -135,13 +157,13 @@ impl<'a> Iterator for Tokens<'a> {
                 self.next()
             }
             // negative number or minus
-            b'-'=> match self.peek() {
+            b'-' => match self.peek() {
                 Some(b'0'..=b'9') => {
                     self.back();
                     Some(self.next_number().map(Token::Number))
                 }
-                _ => Some(Ok(Token::Minus))
-            }
+                _ => Some(Ok(Token::Minus)),
+            },
             // number
             b'0'..=b'9' => {
                 self.back();
