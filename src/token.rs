@@ -1,6 +1,9 @@
 //! Types and methods for parsing a frothy program into [`Token`](enum.Token.html)s
 
 use std::fmt;
+use std::str;
+
+use crate::error::Result;
 
 /// A frothy token
 #[derive(Debug, Clone)]
@@ -20,7 +23,7 @@ pub enum Token {
 }
 
 impl fmt::Display for Token {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Token::Ident(ident) => f.write_str(ident),
             Token::Number(number) => write!(f, "{}", number),
@@ -100,25 +103,23 @@ impl<'a> Tokens<'a> {
         &self.input[start..self.pos]
     }
 
-    fn next_number(&mut self) -> Result<f64, TokenError> {
+    fn next_number(&mut self) -> Result<f64> {
         let sign = if self.next_byte_if(|&b| b == b'-').is_some() {
             -1.0
         } else {
             1.0
         };
 
-        let result: f64 = ::std::str::from_utf8(self.next_byte_while(u8::is_ascii_digit))
-            .unwrap()
-            .parse()
-            .unwrap();
+        let result: f64 = str::from_utf8(self.next_byte_while(u8::is_ascii_digit))?
+            .parse()?;
 
         Ok(result * sign)
     }
 
-    fn next_ident(&mut self) -> Result<String, TokenError> {
-        ::std::str::from_utf8(self.next_byte_while(u8::is_ascii_alphanumeric))
-            .map_err(|_| TokenError::InvalidUtf8)
-            .map(|s| s.to_string())
+    fn next_ident(&mut self) -> Result<String> {
+        Ok(str::from_utf8(self.next_byte_while(|b| {
+            b.is_ascii_alphanumeric() || *b == b'_'
+        }))?.to_string())
     }
 }
 
@@ -126,26 +127,24 @@ impl<'a> Tokens<'a> {
 #[derive(Debug, Clone)]
 pub enum TokenError {
     Unexpected(u8),
-    InvalidUtf8,
 }
 
 impl fmt::Display for TokenError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             TokenError::Unexpected(byte) => {
+                write!(f, "unexpected 0x{:02x}", byte)?;
                 if byte.is_ascii() {
-                    write!(f, "expected '{}'", char::from(*byte))
-                } else {
-                    write!(f, "expected 0x{:02x}", byte)
+                    write!(f, "('{}')", char::from(*byte))?;
                 }
+                Ok(())
             }
-            TokenError::InvalidUtf8 => f.write_str("invalid utf-8"),
         }
     }
 }
 
 impl<'a> Iterator for Tokens<'a> {
-    type Item = Result<Token, TokenError>;
+    type Item = Result<Token>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next_byte_while(u8::is_ascii_whitespace);
@@ -164,16 +163,6 @@ impl<'a> Iterator for Tokens<'a> {
                 }
                 _ => Some(Ok(Token::Minus)),
             },
-            // number
-            b'0'..=b'9' => {
-                self.back();
-                Some(self.next_number().map(Token::Number))
-            }
-            // ident
-            b'a'..=b'z' => {
-                self.back();
-                Some(self.next_ident().map(Token::Ident))
-            }
             // simple tokens
             b'+' => Some(Ok(Token::Plus)),
             b'/' => Some(Ok(Token::Plus)),
@@ -181,7 +170,18 @@ impl<'a> Iterator for Tokens<'a> {
             b'{' => Some(Ok(Token::OpenBrace)),
             b'}' => Some(Ok(Token::CloseBrace)),
             b'=' => Some(Ok(Token::Assign)),
-            b => Some(Err(TokenError::Unexpected(b))),
+            // number
+            b if b.is_ascii_digit() => {
+                self.back();
+                Some(self.next_number().map(Token::Number))
+            }
+            // ident
+            b if b.is_ascii_alphabetic() => {
+                self.back();
+                Some(self.next_ident().map(Token::Ident))
+            }
+            // unrecognized
+            b => Some(Err(TokenError::Unexpected(b).into())),
         })
     }
 }

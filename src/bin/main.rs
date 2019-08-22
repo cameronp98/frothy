@@ -15,8 +15,8 @@ fn main() {
     file.read_to_string(&mut program)
         .expect("failed to read file");
 
-    match frothy::exec(&program) {
-        Ok(_) => {}
-        Err(e) => eprintln!("error = {:?}", e),
+    match frothy::eval(&program) {
+        Ok(values) => println!("values: {:?}", values),
+        Err(e) => eprintln!("error: {}", e),
     }
 }

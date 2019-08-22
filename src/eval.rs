@@ -1,4 +1,9 @@
 //! Evaluate an [`Ast`][Ast] to produce values and console output
+//!
+//! TODO: add support for constants (e.g. PI 3.14 const =)
+//! TODO: create Const(Ast) `Ast` variant
+//! TODO: change `Context.vars` value type to (Ast, is_const: bool)
+//! TODO: disallow assignment where is_const is true
 
 use std::collections::HashMap;
 use std::fmt;
@@ -6,19 +11,63 @@ use std::ops;
 
 use crate::ast::{Ast, Parser};
 use crate::ast::Literal;
-use crate::error::{Error, Result};
+use crate::error::Result;
 
-#[derive(Debug, Clone)]
-pub struct Interpreter {
-    stack: Vec<Value>,
+#[derive(Debug)]
+pub struct Context {
     vars: HashMap<String, Value>,
 }
 
-impl Interpreter {
-    pub fn new() -> Interpreter {
-        Interpreter {
-            stack: vec![],
+impl Context {
+    pub fn new() -> Context {
+        Context {
             vars: HashMap::new(),
+        }
+    }
+
+    pub fn lookup<T: Into<String>>(&self, ident: T) -> Result<Value> {
+        let ident = ident.into();
+        // TODO figure out how variable values should be referenced. At the moment we just clone
+        self.vars.get(&ident)
+            .map(|v| v.clone())
+            .ok_or(InterpreterError::VariableUndefined(ident).into())
+    }
+
+    pub fn builtin_func<T: Into<String>>(&mut self, name: T, f: BuiltinFn) {
+        let name = name.into();
+        self.set(name.clone(), Value::BuiltinFunc(name, f));
+    }
+
+    pub fn set<T: Into<String>>(&mut self, ident: T, value: Value) {
+        self.vars.insert(ident.into(), value);
+    }
+}
+
+/// A frothy interpreter
+///
+/// Builtins are registered when the interpreter is created
+#[derive(Debug)]
+pub struct Interpreter {
+    ctx: Context,
+}
+
+impl Interpreter {
+    /// Create a new frothy interpreter and register builtins
+    pub fn new() -> Interpreter {
+        // set up builtins
+        let mut ctx = Context::new();
+
+        // print function
+        ctx.builtin_func("print", |ctx| {
+            println!("{}", ctx.lookup("print_arg")?);
+            Ok(Value::Nil)
+        });
+
+        // pi constant
+        ctx.set("PI", Value::Number(::std::f64::consts::PI));
+
+        Interpreter {
+            ctx,
         }
     }
 
@@ -29,45 +78,52 @@ impl Interpreter {
             Ast::Subtract(a, b) => Ok(self.eval(a)? - self.eval(b)?),
             Ast::Multiply(a, b) => Ok(self.eval(a)? * self.eval(b)?),
             Ast::Divide(a, b) => Ok(self.eval(a)? / self.eval(b)?),
+            // assignment returns `Nil`
             Ast::Assign(ident, ast) => {
                 let value = self.eval(ast)?;
-                self.vars.insert(ident.clone(), value);
+                self.ctx.set(ident.clone(), value);
                 Ok(Value::Nil)
             }
-            Ast::Block(asts) => {
-                let mut value = Value::Nil;
+            // Block returns the result of the last `Ast` to execute successfully
+            Ast::Block(asts) => self.eval_block(asts),
 
-                for ast in asts {
-                    value = self.eval(ast)?;
-                }
-
-                Ok(value)
-            }
             Ast::Func(asts) => Ok(Value::Func(asts.clone())),
-            Ast::Ident(ident) => {
-                // TODO figure out how variable values should be referenced. At the moment we just clone
-                self.vars
-                    .get(ident)
-                    .ok_or(InterpreterError::VariableUndefined(ident.clone()).into())
-                    .map(|v| v.clone())
-            }
+            Ast::Call(ast) => {
+                let value = self.eval(ast)?;
+                self.call(&value)
+            },
+            Ast::Ident(ident) => self.ctx.lookup(ident),
         }
     }
 
     pub fn interpret(mut self, program: &str) -> Result<Vec<Value>> {
         let parser = Parser::new(program);
+        parser.parse()?.iter().map(|ast| self.eval(ast)).collect()
+    }
 
-        for ast in parser.parse()? {
-            self.eval(&ast)?;
+    fn eval_block(&mut self, asts: &Vec<Ast>) -> Result<Value> {
+        let mut value = Value::Nil;
+
+        for ast in asts {
+            value = self.eval(ast)?;
         }
 
-        Ok(self.stack)
+        Ok(value)
+    }
+
+    fn call(&mut self, value: &Value) -> Result<Value> {
+        match value {
+            Value::Func(asts) => self.eval_block(asts),
+            Value::BuiltinFunc(_, f) => f(&self.ctx),
+            _ => Err(InterpreterError::NotCallable(format!("{}", value)).into()),
+        }
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum InterpreterError {
     VariableUndefined(String),
+    NotCallable(String),
 }
 
 impl fmt::Display for InterpreterError {
@@ -76,17 +132,24 @@ impl fmt::Display for InterpreterError {
             InterpreterError::VariableUndefined(ident) => {
                 write!(f, "undefined variable '{}'", ident)
             }
+            InterpreterError::NotCallable(displayed) => {
+                write!(f, "value '{}' is not callable", displayed)
+            }
         }
     }
 }
 
+/// A builtin function
+pub type BuiltinFn = fn(&Context) -> Result<Value>;
+
 /// A `frothy` value that can be used at runtime
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum Value {
     Number(f64),
     Boolean(bool),
     Nil,
     Func(Vec<Ast>),
+    BuiltinFunc(String, BuiltinFn),
 }
 
 impl Value {
@@ -109,23 +172,36 @@ impl Value {
     }
 }
 
-impl From<Literal> for Value {
-    fn from(lit: Literal) -> Self {
-        match lit {
-            Literal::Boolean(b) => Value::Boolean(b),
-            Literal::Number(n) => Value::Number(n),
-            Literal::Nil => Value::Nil,
-        }
-    }
-}
-
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Value::Number(n) => fmt::Display::fmt(n, f),
             Value::Boolean(b) => fmt::Display::fmt(b, f),
             Value::Nil => write!(f, "Nil"),
-            Value::Func(_) => write!(f, "Func(?)"),
+            Value::Func(_) => f.write_str("<fn>"),
+            Value::BuiltinFunc(name, _) => write!(f, "<builtin-fn:{}>", name),
+        }
+    }
+}
+
+impl fmt::Debug for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Value::Boolean(b) => f.debug_tuple("Boolean").field(b).finish(),
+            Value::Number(n) => f.debug_tuple("Number").field(n).finish(),
+            Value::Func(asts) => f.debug_tuple("Func").field(asts).finish(),
+            Value::BuiltinFunc(name, _) => f.debug_tuple("BuiltinFunc").field(name).finish(),
+            Value::Nil => f.write_str("Nil"),
+        }
+    }
+}
+
+impl From<Literal> for Value {
+    fn from(lit: Literal) -> Self {
+        match lit {
+            Literal::Boolean(b) => Value::Boolean(b),
+            Literal::Number(n) => Value::Number(n),
+            Literal::Nil => Value::Nil,
         }
     }
 }

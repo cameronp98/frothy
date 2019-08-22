@@ -1,6 +1,8 @@
 //! Error handling types and convenience methods
 
 use std::fmt;
+use std::num::ParseFloatError;
+use std::str::Utf8Error;
 
 use crate::ast::AstError;
 use crate::eval::InterpreterError;
@@ -11,18 +13,22 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 
 #[derive(Debug, Clone)]
 pub enum Error {
-    TokenError(TokenError),
-    AstError(AstError),
-    InterpreterError(InterpreterError),
+    Token(TokenError),
+    Ast(AstError),
+    Interpreter(InterpreterError),
+    Utf8(Utf8Error),
+    ParseFloat(ParseFloatError),
     NotEnoughArguments(usize, usize),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Error::TokenError(e) => fmt::Display::fmt(e, f),
-            Error::AstError(e) => fmt::Display::fmt(e, f),
-            Error::InterpreterError(e) => fmt::Display::fmt(e, f),
+            Error::Token(e) => fmt::Display::fmt(e, f),
+            Error::Ast(e) => fmt::Display::fmt(e, f),
+            Error::Interpreter(e) => fmt::Display::fmt(e, f),
+            Error::Utf8(e) => fmt::Display::fmt(e, f),
+            Error::ParseFloat(e) => fmt::Display::fmt(e, f),
             Error::NotEnoughArguments(expected, got) => {
                 write!(f, "expected {} arguments but got {}", expected, got)
             }
@@ -32,18 +38,30 @@ impl fmt::Display for Error {
 
 impl From<TokenError> for Error {
     fn from(error: TokenError) -> Self {
-        Error::TokenError(error)
+        Error::Token(error)
     }
 }
 
 impl From<AstError> for Error {
     fn from(error: AstError) -> Self {
-        Error::AstError(error)
+        Error::Ast(error)
     }
 }
 
 impl From<InterpreterError> for Error {
     fn from(error: InterpreterError) -> Self {
-        Error::InterpreterError(error)
+        Error::Interpreter(error)
+    }
+}
+
+impl From<Utf8Error> for Error {
+    fn from(error: Utf8Error) -> Self {
+        Error::Utf8(error)
+    }
+}
+
+impl From<ParseFloatError> for Error {
+    fn from(error: ParseFloatError) -> Self {
+        Error::ParseFloat(error)
     }
 }

@@ -60,6 +60,7 @@ pub enum Ast {
     Divide(Box<Ast>, Box<Ast>),
 
     Func(Vec<Ast>),
+    Call(Box<Ast>),
 
     // variables
     Ident(String),
@@ -90,6 +91,7 @@ impl fmt::Display for Ast {
                 }
                 f.write_str("} fn)")
             }
+            Ast::Call(ast) => write!(f, "({} call)", ast),
             Ast::Assign(ident, value) => write!(f, "({} {} =)", ident, value),
             Ast::Ident(ident) => write!(f, "<{}>", ident),
         }
@@ -115,7 +117,7 @@ impl<'a> Parser<'a> {
         loop {
             match self.parse_next() {
                 Ok(_) => {}
-                Err(Error::AstError(AstError::UnexpectedEoi)) => return Ok(self.stack),
+                Err(Error::Ast(AstError::UnexpectedEoi)) => return Ok(self.stack),
                 Err(e) => return Err(e),
             }
         }
@@ -131,7 +133,7 @@ impl<'a> Parser<'a> {
         }
 
         if let Some(token) = self.tokens.next() {
-            match token.unwrap() {
+            match token? {
                 // operators
                 Token::Plus => binary_op!(Add),
                 Token::Minus => binary_op!(Subtract),
@@ -144,6 +146,7 @@ impl<'a> Parser<'a> {
                     match ident.as_ref() {
                         // keywords
                         "fn" => self.parse_fn()?,
+                        "call" => self.parse_call()?,
                         "Nil" => self.stack.push(Ast::Literal(Literal::Nil)),
                         "true" => self.stack.push(Ast::Literal(Literal::Boolean(true))),
                         "false" => self.stack.push(Ast::Literal(Literal::Boolean(false))),
@@ -190,7 +193,7 @@ impl<'a> Parser<'a> {
                 return Ok(());
             }
 
-            if let Err(Error::AstError(AstError::UnexpectedEoi)) = self.parse_next() {
+            if let Err(Error::Ast(AstError::UnexpectedEoi)) = self.parse_next() {
                 return Err(AstError::Expected(String::from("}")).into());
             }
         }
@@ -202,6 +205,12 @@ impl<'a> Parser<'a> {
         } else {
             return Err(AstError::Expected(String::from("block")).into());
         }
+        Ok(())
+    }
+
+    fn parse_call(&mut self) -> Result<()> {
+        let arg = self.stack.pop().ok_or(Error::NotEnoughArguments(1, 0))?;
+        self.stack.push(Ast::Call(Box::new(arg)));
         Ok(())
     }
 }

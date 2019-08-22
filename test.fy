@@ -1,7 +1,10 @@
-{ x x * } fn
-
-foo {
-    a a * b b * +
+area {
+    r r * PI *
 } fn =
 
-b foo =
+r 5 =
+print_arg area call =
+
+f print =
+f call
+
