@@ -108,6 +108,7 @@ impl<'a> Tokens<'a> {
         }
     }
 
+    // call `next_byte` if `f` is true for the next peeked byte
     fn next_byte_if<F: Fn(&u8) -> bool>(&mut self, f: F) -> Option<u8> {
         self.peek().and_then(|b| {
             if f(&b) {
@@ -119,12 +120,16 @@ impl<'a> Tokens<'a> {
         })
     }
 
+    // call `next_byte_if` continuously until `f` returns false, and return
+    // the slice of all bytes for which `f` returned true (in order)
     fn next_byte_while<F: Fn(&u8) -> bool>(&mut self, f: F) -> &[u8] {
         let start = self.pos;
         while self.next_byte_if(&f).is_some() {}
         &self.input[start..self.pos]
     }
 
+    // read and parse a number, assuming the current byte is a valid number character
+    // TODO: add support for decimals
     fn next_number(&mut self) -> Result<f64> {
         let sign = if self.next_byte_if(|&b| b == b'-').is_some() {
             -1.0
@@ -138,6 +143,7 @@ impl<'a> Tokens<'a> {
         Ok(result * sign)
     }
 
+    // read and parse an ident, assuming the current byte is a valid ident character
     fn next_ident(&mut self) -> Result<String> {
         Ok(str::from_utf8(self.next_byte_while(|b| {
             b.is_ascii_alphanumeric() || *b == b'_'
@@ -174,12 +180,12 @@ impl<'a> Iterator for Tokens<'a> {
             b'{' => Some(Ok(Token::OpenBrace)),
             b'}' => Some(Ok(Token::CloseBrace)),
             b'=' => Some(Ok(Token::Assign)),
-            // number
+            // number: <digit>+
             b if b.is_ascii_digit() => {
                 self.back();
                 Some(self.next_number().map(Token::Number))
             }
-            // ident
+            // ident: <alphabetic> <alphabetic or '_'>+
             b if b.is_ascii_alphabetic() => {
                 self.back();
                 Some(self.next_ident().map(Token::Ident))

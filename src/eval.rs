@@ -30,8 +30,8 @@ impl Context {
         let ident = ident.into();
         // TODO figure out how variable values should be referenced. At the moment we just clone
         self.vars.get(&ident)
-            .map(|v| v.clone())
-            .ok_or(InterpreterError::VariableUndefined(ident).into())
+            .cloned()
+            .ok_or_else(|| InterpreterError::VariableUndefined(ident).into())
     }
 
     pub fn builtin_func<T: Into<String>>(&mut self, name: T, f: BuiltinFn) {
@@ -102,7 +102,7 @@ impl Interpreter {
         parser.parse()?.iter().map(|ast| self.eval(ast)).collect()
     }
 
-    fn eval_block(&mut self, asts: &Vec<Ast>) -> Result<Value> {
+    fn eval_block(&mut self, asts: &[Ast]) -> Result<Value> {
         let mut value = Value::Nil;
 
         for ast in asts {
@@ -157,6 +157,8 @@ pub enum Value {
 impl Value {
     /// Determine if two values are equal to each other
     pub fn eq(&self, other: &Self) -> Value {
+        // currently only values of the same `Value` variant can be compared
+        // they are compared as defined in the operator `impl`s section below
         match (self, other) {
             (Value::Number(lhs), Value::Number(rhs)) => Value::Boolean(lhs == rhs),
             (Value::Boolean(lhs), Value::Boolean(rhs)) => Value::Boolean(lhs == rhs),
@@ -166,6 +168,7 @@ impl Value {
 
     /// Determine if two values are not equal to each other
     pub fn neq(&self, other: &Self) -> Value {
+        // use the inverse of `Value::eq`
         if let Value::Boolean(b) = self.eq(other) {
             Value::Boolean(!b)
         } else {
